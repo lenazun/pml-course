@@ -1,0 +1,109 @@
+---
+title: "Predicting the correct performance of barbell lifts with wearable data"
+author: "Lena Gunn"
+date: "December 15, 2014"
+output: html_document
+---
+
+### Summary
+
+The goal of this project is to predict the manner in which users of wearable devices performed an exercise (in this case barbell lifts). The data set contains records from the accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+### Data sources
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project comes from: http://groupware.les.inf.puc-rio.br/har.
+
+### Loading and preprocessing the data
+
+I downloaded the csv files to the project directory and loaded the files making sure to clean up the NA strings.
+
+
+```{r}
+set.seed(4245)
+library(caret)
+
+train <- read.csv("pml-training.csv", header = T, na.strings = c(NA,"","NA","<NA>", "#DIV/0!"))
+test <- read.csv("pml-testing.csv", header = T, na.strings = c(NA,"","NA","<NA>", "#DIV/0!"))
+
+```
+
+### Choosing variables and splitting data
+
+First I decided to eliminate the first columns because they contain no features that would contribute to an accurate prediction.
+
+```{r}
+unecessary <- grep("kurtosis|skewness|max|min|amplitude|avg|stddev|var", names(train))
+unecessary <- c(unecessary,c(1:7))
+train <- train[,-unecessary]
+test <- test[,-unecessary]
+```
+
+I decided to work on a 70%-30% data partition on the original training set.
+
+```{r}
+inTrain <- createDataPartition(y=train$classe,p=0.70, list=FALSE)
+training_set <- train[inTrain,]
+testing_set <- train[-inTrain,]
+
+class(training_set$classe)
+dim(training_set);dim(testing_set)
+
+```
+
+### Training the model
+
+I decided to use a random forest algorithm.  Because this can take a long time to process, I used two libraries to facilitate the paralell processing.  In this case registerDoParallels assigns half of the core of available to the machine.  In this case it will process 4 random forests with 150 trees each and combine them. 
+
+
+```{r}
+library(foreach)
+library(doParallel)
+library(randomForest)
+
+registerDoParallel()
+
+modFit <- foreach(ntree=rep(150, 4), .combine=randomForest::combine) %dopar% randomForest(training_set[-ncol(training_set)], training_set$classe, ntree=ntree)
+               
+print (modFit)
+```
+
+### Cross validation and out of sample error
+
+Now that the model has been trained it's time to apply it to the partial testing data set we set aside from the original training data.
+
+```{r}
+predictions <- predict(modFit, newdata=testing_set)
+confusionMatrix(predictions,testing_set$classe)
+```
+
+As we can see in the results of the confusion matrix, the model has an accuracy of 0.9958 and high values for sensitivity and specificity. The out of sample error should be around 99%
+
+### Applying the model to the provided test cases
+
+Here I used the suggested function to generate the files to be written and submitted on the course environment.
+
+```{r}
+answers <- predict(modFit, test)
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+
+```
+
+All files generated passed the tests for project submission.
+
+
+
